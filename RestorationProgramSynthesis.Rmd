@@ -1,0 +1,272 @@
+---
+title: "Whitebark Pine Restoration Synthesis"
+output: html_document
+date: "`r Sys.Date()`"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Libraries
+packageList <- c(
+  "data.table", # data manipulation
+  "sf", # spatial data
+  "dplyr", # data manipulation
+  "leaflet", # interactive maps
+  "viridis", # creates colours for leaflet::colorFactor
+  "fontawesome", # icons for leaflet maps
+  "leaflegend", # legend for awesome icons
+  "htmltools" # html code for leaflet maps
+)
+# Check you have them in your library
+new.packages <- packageList[!(packageList %in% installed.packages()[,"Package"])]
+# load them
+if(length(new.packages)) install.packages(new.packages)
+lapply(packageList, require, character.only = TRUE)
+rm(packageList, new.packages)
+
+
+# Load data
+# Collection trees
+alltrees <- fread("./Inputs/Seed Collection - All years.csv") # check this is the most recent version if it has been a while since last used
+alltrees[Screening == "", Screening := "N"]
+
+# Planted areas - spatial
+plant.sf <- st_read(dsn = "./Inputs/AllPlantingLocations.gpkg")
+plant.sf <- st_zm(plant.sf, drop=TRUE) # remove the z dimension or it won't plot
+# Planted areas - data
+plant <- fread("./Inputs/Planting_AllYears.csv")
+
+# ARU sites
+ARU <- fread("./Inputs/WBP-ARU_data_AllYears.csv")
+ARU.sf <- st_as_sf(ARU, coords = c("Longitude", "Latitude"),
+                   crs = "+proj=longlat")
+
+# Camera sites
+cam <- fread("./Inputs/CamSetupData2023.csv")
+cam.sf <- st_as_sf(cam, coords = c("Longitude", "Latitude"),
+                   crs = "+proj=longlat")
+
+# WBP range
+range.sf <- st_read(dsn = "./Inputs/WBP_Range_clason.gpkg")
+range.sf <- st_transform(range.sf, crs = "+proj=longlat")
+
+```
+
+This document presents the work the Bulkley Valley Research Centre (BVRC) has completed for the Whitebark Pine Program since 2011. HCTF has provided funding from \_\_ to \_\_. This funding as allowed us to collect cones from rust resistant whitebark pine trees .. BLAH BLAH BLAH.
+
+## Seed collection
+
+In 2011, 2013, 2018, and 2022 we collected cones from trees that were identified as healthy in areas with high blister rust mortality. The cones were shucked to access the seeds, which we then send to BC Tree Centre for storage, Kalamalka Research Station for rust screening, and nurseries for future tree planting.
+
+```{r cars, echo=FALSE}
+# COLLECTION TREES
+
+# Number of collected trees by year
+filtcolltrees <- unique(alltrees$Tree_ID)
+# remove the seedlots and bulked seeds from the unique collection trees
+filtcolltrees <- filtcolltrees[!grepl("seedlot|bulk", filtcolltrees, ignore.case=TRUE)]
+filtalltrees <- alltrees[Tree_ID %in% filtcolltrees]
+colltrees <- filtalltrees[, .(NumCollTrees = uniqueN(Tree_ID)), by=YearColl]
+
+# kg of seed collected
+alltrees[Total_Seeds_g == "", Total_Seeds_g:= NA]
+collSummary <- alltrees[!is.na(Total_Seeds_g), .(Seeds_g = sum(Total_Seeds_g)), by=YearColl]
+collSummary[, Seeds_kg := Seeds_g*0.001] # convert g to kg
+
+collSummary <- merge(collSummary, colltrees)
+collSummary[, Seeds_g:=NULL]
+collSummary
+
+# Number of trees in the screening program
+screening <- alltrees[Screening == "Y", .(Screening = uniqueN(Tree_ID))]
+
+# Number of trees identified as elite trees
+elite <- alltrees[Elite_tree == "Y", .(Elite = uniqueN(Tree_ID))]
+# Number of plus trees *not sure which trees are not plus trees*
+```
+
+We have submitted `r screening` seedlings to the rust screening program. Of these screened seedlings, `r elite` have been identified as elite trees.
+
+## Restoration
+
+In 2011, 2012, 2014, 2017, 2021, and 2023 we planted whitebark pine seedlings in areas that had recently burned, various elevation bands, and ... Within these restoration plantations we established monitoring trees to be measured and assess the health 1, 5, 10, 15 years post planting. ** get more info on 10 year results from Sybille **
+
+```{r pressure, echo=FALSE}
+# Area planted
+plant[, Area_ha := Area_m2*0.0001]
+
+# Tree monitoring *Sybille's results*
+```
+
+## Future Directions
+
+We would like to better understand the relationship between wildlife and whitebark pine. We know that Clark's nutcrackers are essential for planting seeds and therefore success of whitebark pine establishment, but little is known about the Clark's nutcracker at the northern limits of the whitebark pine range. Studies from the Yellowstone region have shown a strong relationship between grizzly bear diet and whitebark pine seeds, but similar to the Clark's nutcracker, there has been no research on these relationships at the northern limits.
+
+We have started a pilot project using ARUs to observe when the nutcrackers are in a whitebark pine area and how long they stay, and cameras to observe what wildlife is using the whitebark pine ecosystems. We have identified areas which require more funding to establish proper research.
+
+### Restoration Synthesis Map
+
+This map presents all of the whitebark pine restoration activities that the BVRC has carried out. This includes cone collection, rust screening, and planting seedlings, as well as current habitat use projects consisting of ARUs for Clark's nutcracker detection and cameras for wildlife detection.
+
+```{r echo=FALSE, out.width="800px", out.height="600px"}
+# collection trees: column for icon/colour
+alltrees[, ScreenResults := ifelse(Elite_tree == "Y", "Elite",
+                                   ifelse(Screening == "Y", "Screened", "Not screened"))]
+#remove rows with missing lat long - they are the bulk lots
+temp <- alltrees[!is.na(Longitude) & Longitude != ""]
+# convert dt to sf
+alltrees.sf <- st_as_sf(temp, coords = c("Longitude", "Latitude"), 
+                        crs = "+proj=longlat")
+alltrees.sf$YearColl <- as.factor(alltrees.sf$YearColl)
+
+# planted: 
+plant.sf$Area <- as.numeric(plant.sf$Area)
+plant.sf$Area_ha <- round(plant.sf$Area*0.0001, digits = 1)
+
+#colours based on year planted
+plant.sf$Year <- as.factor(plant.sf$YrPlntd)
+colour <- colorFactor(
+  palette = c("purple", "blue", "red", "pink", "orange", "green"),
+  domain = c("2011", "2012", "2014", "2017", "2021", "2023")
+)
+
+# create colours and icons based on screened and elite trees
+# list of icons
+treeIcons <- awesomeIconList(
+  "Elite" = makeAwesomeIcon(
+    icon = "star",
+    library = "fa",
+    markerColor = "purple",
+    iconColor = "black"
+  ),
+  "Screened" = makeAwesomeIcon(
+    icon = NA,
+    library = "fa",
+    markerColor = "purple"
+  ),
+  "Not screened" = makeAwesomeIcon(
+    icon = NA,
+    library = "fa",
+    markerColor = "blue"
+  )
+)
+
+ARUicons <- makeAwesomeIcon(
+  text = fa("crow"), # for some reason have to write it like this for crow to show up
+  library = "fa",
+  markerColor = "orange"
+)
+
+cameraIcons <- makeAwesomeIcon(
+  icon = "camera",
+  library = "fa",
+  markerColor = "orange"
+)
+
+# Create habitat use icons for legend
+habLegendIcons <- awesomeIconList(
+  "ARU sites" = makeAwesomeIcon(
+    text = fa("crow"),
+    icon = NA,
+    library = "fa",
+    markerColor = "orange",
+    iconColor = "black"
+  ),
+  "Camera sites" = makeAwesomeIcon(
+    icon = "camera",
+    library = "fa",
+    markerColor = "orange",
+    iconColor = "black"
+  )
+)
+
+
+# Map
+p <- leaflet() %>%
+  addProviderTiles(providers$Esri.WorldImagery) %>% # ESRI satelite imagery
+  # 2011 collection trees
+  addAwesomeMarkers(data=alltrees.sf[alltrees.sf$YearColl == 2011,],
+                    icon = ~treeIcons[ScreenResults],
+                    popup = ~paste(Tree_ID,
+                                   "<br>Year collected:", YearColl,
+                                   "<br>Location:", Location),
+                    group = "2011 Seed Collection") %>%
+  # 2013 collection trees
+  addAwesomeMarkers(data=alltrees.sf[alltrees.sf$YearColl == 2013,],
+                    icon = ~treeIcons[ScreenResults],
+                    popup = ~paste(Tree_ID,
+                                   "<br>Year collected:", YearColl,
+                                   "<br>Location:", Location),
+                    group = "2013 Seed Collection") %>%
+  # 2018 collection trees
+  addAwesomeMarkers(data=alltrees.sf[alltrees.sf$YearColl == 2018,],
+                    icon = ~treeIcons[ScreenResults],
+                    popup = ~paste(Tree_ID,
+                                   "<br>Year collected:", YearColl,
+                                   "<br>Location:", Location),
+                    group = "2018 Seed Collection") %>%
+  # 2022 collection trees
+  addAwesomeMarkers(data = alltrees.sf[alltrees.sf$YearColl == "2022",],
+                    icon = ~treeIcons[ScreenResults],
+                    popup = ~paste(Tree_ID,
+                                   "<br>Year collected:", YearColl,
+                                   "<br>Location:", Location),
+                    group = "2022 Seed Collection") %>%
+  # ARU sites
+  addAwesomeMarkers(data = ARU.sf,
+                    icon = ARUicons,
+                    popup = ~paste("<br>Location:", Location,
+                                   "<br>Deployment year:", Year),
+                    group = "ARU sites") %>%
+  # Camera sites
+  addAwesomeMarkers(data = cam.sf,
+                    icon = cameraIcons,
+                    popup = ~paste("<br>Location:", Location,
+                                   "<br>Deployment year:", Year),
+                    group = "Camera sites") %>%
+  # # add layers on/off control
+  addLayersControl(overlayGroups = c("2011 Seed Collection",
+                                     "2013 Seed Collection",
+                                     "2018 Seed Collection",
+                                     "2022 Seed Collection",
+                                     "Planting Locations",
+                                     "ARU sites",
+                                     "Camera sites",
+                                     "WBP range"),
+                   position = "topright") %>%
+  # Collection tree legend
+  addLegendAwesomeIcon(
+    iconSet = treeIcons,
+    title = "Collection Trees",
+    position = "topright",
+    orientation = "vertical") %>%
+  # Habitat use legend
+  addLegendAwesomeIcon(
+    iconSet = habLegendIcons,
+    title = "Habitat Use",
+    position = "topright",
+    orientation = "vertical") %>%
+  #WBP range
+  addPolygons(data = range.sf,
+              color = "green",
+              fillOpacity = 0.25,
+              group = "WBP range") %>%
+  # Restoration plant areas
+  addPolygons(data = plant.sf,
+              color = ~colour(Year),
+              popup = ~paste(Name,
+                             "<br>Year planted:", Year,
+                             "<br> Area (ha):", Area_ha),
+              fillOpacity = 1,
+              highlightOptions = highlightOptions(color = "white",
+                                                  weight = 2,
+                                                  bringToFront = TRUE),
+              group = "Planting Locations") %>%
+  # Planting colour legend
+  addLegend("topright", pal = colour, values = plant.sf$Year,
+            title = "Year Planted",
+            opacity = 1)
+
+p
+```
