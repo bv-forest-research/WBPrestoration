@@ -35,7 +35,7 @@ alltrees[Screening == "", Screening := "N"]
 plant.sf <- st_read(dsn = "./Inputs/AllPlantingLocations.gpkg")
 plant.sf <- st_zm(plant.sf, drop=TRUE) # remove the z dimension or it won't plot
 # Planted areas - data
-plant <- fread("./Inputs/Planting_AllYears.csv")
+plant <- fread("./Inputs/Planting_AllYears.csv") # IF updated Oct 26, 2023
 
 # ARU sites
 ARU <- fread("./Inputs/WBP-ARU_data_AllYears.csv")
