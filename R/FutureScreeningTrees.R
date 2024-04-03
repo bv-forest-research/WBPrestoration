@@ -28,21 +28,23 @@ p <- leaflet(alltrees) %>%
   addCircleMarkers(lng=alltrees$Longitude, lat=alltrees$Latitude,
                    color= ~colour(Screening),
                    popup=paste(alltrees$Tree_ID),
-                   stroke = FALSE, fillOpacity = 0.5
-  )
+                   stroke = FALSE, fillOpacity = 0.5) %>%
+  addLegend("topright", pal = colour, values = alltrees$Screening,
+            title = "Screened?",
+            opacity = 1)
 p
 
 # Buffer trees that have been screened by 50 m (trees that did not germinate can be resubmitted)
-
-# filter trees that have been screened
-screened <- alltrees.sf[alltrees.sf$Screening == "Y",]
-# create a 50 m buffer
-screened.buffer <- st_buffer(screened, dist = 50)
 #remove rows with missing lat long - they are the bulk lots
 temp <- alltrees[!is.na(Longitude) & Longitude != ""]
 # convert dt to sf
 alltrees.sf <- st_as_sf(temp, coords = c("Longitude", "Latitude"), 
                         crs = "+proj=longlat")
+# filter trees that have been screened
+screened <- alltrees.sf[alltrees.sf$Screening == "Y",]
+# create a 50 m buffer
+screened.buffer <- st_buffer(screened, dist = 50)
+
 
 # check out the buffers
 pp <- p %>%
@@ -66,9 +68,14 @@ fp <- leaflet() %>%
     data = screened.buffer)
 fp
 
-# Only keep relevant columns for seed submission to Kalamalka
+# Only keep trees that have >50g of seed in BVRC's "ownership" at TSC
 FutureScreen.dt <- as.data.table(FutureScreen)
 FutureScreen.dt <- cbind(FutureScreen.dt, st_coordinates(FutureScreen))
+FutureScreen.dt <- FutureScreen.dt[TSC_g >= 50, ]
+# Only keep trees that have a unique tree tag
+FutureScreen.dt <- FutureScreen.dt[Unique_ID != "", ]
+
+# Only keep relevant columns for seed submission to Kalamalka
 columnstokeep <- c("Tree_ID", "Unique_ID", "Location", "LandOwnership", "X", "Y", 
                    "ABC", "IABC", "ASC", "IASC", "Infected", 
                   "TreesKilled_byRustMPB")
