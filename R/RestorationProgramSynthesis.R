@@ -14,23 +14,6 @@ library(fontawesome)
 library(htmltools)
 library(leaflegend) # legend for leaflet AwesomeIcons
 
-ui <- fluidPage(
-  # Include Font Awesome via tags$head
-  tags$head(
-    tags$link(
-      rel = "stylesheet",
-      href = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css"
-    )
-  ),
-  
-  # Your Shiny app content goes here
-)
-
-server <- function(input, output) {
-  # Shiny server logic goes here
-}
-
-
 # Load data
 # Collection trees
 alltrees <- fread("./Inputs/Seed Collection - All years.csv") # check this is the most recent version if it has been a while since last used
@@ -67,16 +50,23 @@ filtalltrees <- alltrees[Tree_ID %in% filtcolltrees]
 colltrees <- filtalltrees[, .(NumCollTrees = uniqueN(Tree_ID)), by=YearColl]
 
 
-# kg of seed collected
+# kg & number of seed collected
 alltrees[Total_Seeds_g == "", Total_Seeds_g:= NA]
-collSummary <- alltrees[!is.na(Total_Seeds_g), .(Seeds_g = sum(Total_Seeds_g)), by=YearColl]
+alltrees[, NumSeeds := (Total_Seeds_g/`100_wt_g`)*100]
+
+collSummary <- alltrees[!is.na(Total_Seeds_g), .(Seeds_g = sum(Total_Seeds_g), NumSeeds = sum(NumSeeds)), by=YearColl]
 collSummary[, Seeds_kg := Seeds_g*0.001] # convert g to kg
 
 collSummary <- merge(collSummary, colltrees)
 collSummary[, Seeds_g:=NULL]
 
+sum(collSummary$NumSeeds)
+
+
+
 # Number of trees identified as elite trees
 elite <- alltrees[Elite_tree == "Y", .(Elite = uniqueN(Tree_ID))]
+
 
 # Number of trees in the screening program
 screening <- alltrees[Screening == "Y", .(Screening = uniqueN(Tree_ID))]
@@ -89,9 +79,11 @@ screening <- alltrees[Screening == "Y", .(Screening = uniqueN(Tree_ID))]
 
 # Area planted
 plant[, Area_ha := Area_m2*0.0001]
+#Total area planted
+sum(plant$Area_ha, na.rm=TRUE)
 
 # Number of trees planted *need info from Sybille*
-
+sum(plant$NumSeedlings, na.rm = TRUE)
 
 #------------------------------------------------------
 # HABITAT USE (area of future work)
